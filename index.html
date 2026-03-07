@@ -146,10 +146,16 @@
            </div>
            
            <!-- Export -->
-           <div class="space-y-4 pt-4 border-t border-gray-800">
+           <div class="space-y-3 pt-4 border-t border-gray-800">
                <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Export</label>
+               
+               <!-- NEW: Save PNG Button -->
+               <button id="export_png_btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2">
+                   <i data-lucide="image" class="w-4 h-4"></i> Save Skin (.png)
+               </button>
+               
                <button id="export_glb_btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-900/20 flex items-center justify-center gap-2">
-                   <i data-lucide="download" class="w-4 h-4"></i> Export to GLB (Blender)
+                   <i data-lucide="download" class="w-4 h-4"></i> Export Model (.glb)
                </button>
            </div>
        </div>
@@ -191,6 +197,10 @@
             const defaultSkin = "https://minotar.net/skin/Steve";
             const defaultBg = "#030712"; // matches Tailwind bg-gray-950
             let currentCapeUrl = null;
+            
+            // Track the current skin to allow saving as PNG
+            let currentSkinUrl = defaultSkin;
+            let currentUsername = 'Steve';
 
             // Initialize the 3D Viewer
             const viewer = new SkinViewer({
@@ -263,7 +273,10 @@
                         const uuid = data.uuid;
                         
                         // Load high-quality skin from Crafatar
-                        viewer.loadSkin(`https://crafatar.com/skins/${uuid}`);
+                        const skinUrl = `https://crafatar.com/skins/${uuid}`;
+                        viewer.loadSkin(skinUrl);
+                        currentSkinUrl = skinUrl;
+                        currentUsername = username;
                         
                         // Check if the user has a cape via API response
                         if (data.textures && data.textures.cape) {
@@ -277,11 +290,11 @@
                     }
                 } catch (e) {
                     console.log("Falling back to standard Minotar skin...", e);
-                    viewer.loadSkin(`https://minotar.net/skin/${username}`);
+                    const skinUrl = `https://minotar.net/skin/${username}`;
+                    viewer.loadSkin(skinUrl);
+                    currentSkinUrl = skinUrl;
+                    currentUsername = username;
                     setCape(null);
-                    
-                    // Show error only if it's completely unresolvable or we want to inform them cape is definitely missing
-                    // We'll leave it hidden since Minotar fallback usually works for standard skins
                 } finally {
                     setLoading(false);
                 }
@@ -297,7 +310,11 @@
                 const file = e.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onload = (event) => viewer.loadSkin(event.target.result);
+                reader.onload = (event) => {
+                    viewer.loadSkin(event.target.result);
+                    currentSkinUrl = event.target.result;
+                    currentUsername = file.name.replace(/\.[^/.]+$/, ""); // Use filename as fallback
+                };
                 reader.readAsDataURL(file);
                 e.target.value = ''; // Reset input
             });
@@ -337,6 +354,33 @@
                 viewer.background = e.target.value;
                 document.getElementById('viewer_wrapper').style.backgroundColor = e.target.value;
             });
+            
+            // --- EXPORT LOGIC ---
+
+            // Save Skin (PNG) Logic
+            document.getElementById('export_png_btn').addEventListener('click', async () => {
+                try {
+                    // Fetch the texture blob
+                    const response = await fetch(currentSkinUrl);
+                    const blob = await response.blob();
+                    
+                    // Create object URL and download
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.style.display = 'none';
+                    link.href = url;
+                    link.download = `${currentUsername}_skin.png`;
+                    
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                } catch (error) {
+                    console.error('Failed to download skin:', error);
+                    // Fallback to opening in a new tab if there are restrictive CORS policies
+                    window.open(currentSkinUrl, '_blank');
+                }
+            });
 
             // GLB Export Logic
             document.getElementById('export_glb_btn').addEventListener('click', () => {
@@ -352,8 +396,7 @@
                         link.style.display = 'none';
                         link.href = url;
                         
-                        // Use loaded username for the filename, otherwise fallback
-                        const name = usernameInput.value.trim() || 'minecraft_skin';
+                        const name = currentUsername || 'minecraft_skin';
                         link.download = `${name}_model.glb`;
                         
                         document.body.appendChild(link);
@@ -373,6 +416,9 @@
             document.getElementById('reset_btn').addEventListener('click', () => {
                 viewer.loadSkin(defaultSkin);
                 setCape(null);
+                
+                currentSkinUrl = defaultSkin;
+                currentUsername = 'Steve';
                 
                 viewer.animation = new IdleAnimation();
                 document.getElementById('anim_select').value = 'idle';
